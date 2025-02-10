@@ -1,1 +1,82 @@
-#Integrated Bioinformatics Approach to Identify Potential Molecular Biomarkers for Diabetic Nephropathy.
+# DATA IMPORT
+library(GEOquery)
+my_id <- "GSE1009"
+gse <- getGEO(my_id)
+length(gse)
+gse <- gse[[1]]
+gse
+pData(gse) 
+fData(gse) 
+exprs(gse) 
+summary(exprs(gse))
+View(exprs(gse))
+exprs(gse) <- log2(exprs(gse))
+View(exprs(gse))
+# DATA NORMALIZATION
+summary(exprs(gse))
+View(summary(exprs(gse)))
+boxplot(exprs(gse),outline=FALSE)
+
+# CLINICAL VARIABLE INSPECTION
+library(dplyr)
+sampleInfo <- pData(gse)
+View(sampleInfo)
+sampleInfo <- select(sampleInfo, title,description)
+View(sampleInfo)
+
+# IDENTIFICATION OF DEGS
+library(limma)
+library(ggplot2)
+design <- model.matrix(~0+sampleInfo$description)
+View(design)
+colnames(design) <- c("disease","control")
+fit <- lmFit(exprs(gse), design)
+contrasts <- makeContrasts(disease - control, levels=design)
+fit2 <- contrasts.fit(fit, contrasts)
+fit2 <- eBayes(fit2)
+topTable(fit2)
+table(decideTests(fit2))
+results<-decideTests(fit2)
+topTable(fit2)
+full_results <- topTable(fit2, number=Inf)
+full_results <- tibble::rownames_to_column(full_results,"ID")
+summary(full_results)
+separation<-as_tibble(full_results)
+data_up<-separation %>% filter(full_results['expression']=="Up")
+View(data_up)
+write.csv(data_up,"data_up.csv")
+data_down<-separation %>% filter(full_results['expression']=="Down")
+View(data_down)
+write.csv(data_down,"data_down.csv")
+full_results$expression = ifelse(full_results$P.Value < 0.01 & abs(full_results$logFC) >= 2, ifelse(full_results$logFC> 2 ,'Up','Down'), 'Insignificant')
+vol_plot <- ggplot(data = full_results, aes(x = logFC, y = -log10(full_results$P.Value), colour=expression, label = full_results$label)) + geom_point(alpha=0.4, size=3.5) + scale_color_manual(values=c("blue", "grey","red")) + xlim(c(-4.5, 4.5)) + geom_vline(xintercept=c(-2,2),lty=4,col="black",lwd=0.8) + geom_hline(yintercept = 2.,lty=4,col="black",lwd=0.8) + labs(x="log2(Fold change)", y="-log10 (P-value)", title="Differential expression")  + theme_bw()+ theme(plot.title = element_text(hjust = 0.5),  legend.position="right", legend.title = element_blank())
+vol_plot
+separation<-as_tibble(full_results)
+data_up<-separation %>% filter(full_results['expression']=="Up")
+View(data_up)
+write.csv(data_up,"data_up.csv")
+data_down<-separation %>% filter(full_results['expression']=="Down")
+View(data_down)
+write.csv(data_down,"data_down.csv")
+
+# CONVERT PROBE IDS INTO ENSEMBL AND GENE SYMBOL
+# Upregulated
+BiocManager::install("gprofiler2")
+library(gprofiler2)
+convert_up<-gconvert(query = c(data_up$ID), organism = "hsapiens", target="ENSG", mthreshold = Inf, filter_na = TRUE)
+View(convert_up)
+convert_up_unique<-distinct(convert_up,convert_up$input_number, .keep_all = TRUE)
+summary(convert_up_unique)
+data_up$ENSEMBL<- convert_up_unique$target
+data_up$gene<- convert_up_unique$name
+write.csv(data_up,"convert_up.csv")
+# Downregulated
+convert_down<-gconvert(query = c(data_down$ID), organism = "hsapiens", target="ENSG", mthreshold = Inf, filter_na = TRUE)
+View(convert_down)
+convert_down_unique<-distinct(convert_down,convert_down$input_number, .keep_all = TRUE)
+summary(convert_down_unique)
+data_down$ENSEMBL<- convert_down_unique$target
+data_down$gene<- convert_down_unique$name
+write.csv(data_down,"convert_down.csv")
+
+
